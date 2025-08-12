@@ -1,6 +1,6 @@
-import fs from 'fs';
-import axios from 'axios';
-import FormData from 'form-data';
+const fs = require('fs');
+const axios = require('axios');
+const FormData = require('form-data');
 
 const REQUIRED = [
   'yeahdesk-docs_support.md',
@@ -53,15 +53,17 @@ async function listVectorStoreFiles(vectorStoreId) {
 
 async function getFileMeta(fileId) {
   const { data } = await api.get(`/files/${fileId}`);
-  return data; // содержит filename
+  return data; // { id, filename, ... }
 }
 
 async function deleteFromVectorStore(vectorStoreId, fileId) {
-  await api.delete(`/vector_stores/${vectorStoreId}/files/${fileId}`);
+  try { await api.delete(`/vector_stores/${vectorStoreId}/files/${fileId}`); }
+  catch (e) { if (e.response?.status !== 404) throw e; }
 }
 
 async function deleteAccountFile(fileId) {
-  await api.delete(`/files/${fileId}`);
+  try { await api.delete(`/files/${fileId}`); }
+  catch (e) { if (e.response?.status !== 404) throw e; }
 }
 
 async function uploadFile(filepath) {
@@ -84,11 +86,9 @@ async function addFilesToVectorStore(vectorStoreId, fileIds) {
       console.log(`Создан и привязан Vector Store: ${VECTOR_STORE_ID}`);
     }
 
-    // Дедупликация: вычистить прежние версии по имени файла
     const vsFiles = await listVectorStoreFiles(VECTOR_STORE_ID);
     const targetNames = new Set(REQUIRED);
 
-    // Собираем file_id по совпадению filename
     const toRemove = [];
     for (const f of vsFiles) {
       try {
@@ -96,19 +96,15 @@ async function addFilesToVectorStore(vectorStoreId, fileIds) {
         if (meta?.filename && targetNames.has(meta.filename)) {
           toRemove.push(f.id);
         }
-      } catch (e) {
-        // пропускаем сбои получения метаданных
-      }
+      } catch (_) {}
     }
 
-    // Удаляем из Vector Store и аккаунта
     for (const id of toRemove) {
-      try { await deleteFromVectorStore(VECTOR_STORE_ID, id); } catch {}
-      try { await deleteAccountFile(id); } catch {}
+      await deleteFromVectorStore(VECTOR_STORE_ID, id);
+      await deleteAccountFile(id);
       console.log(`Удалена старая версия: ${id}`);
     }
 
-    // Полная перезаливка 3 файлов
     const uploadedIds = [];
     for (const fp of REQUIRED) {
       const id = await uploadFile(fp);
@@ -118,7 +114,6 @@ async function addFilesToVectorStore(vectorStoreId, fileIds) {
 
     await addFilesToVectorStore(VECTOR_STORE_ID, uploadedIds);
     console.log(`Файлы привязаны к Vector Store: ${VECTOR_STORE_ID}`);
-
   } catch (e) {
     console.error('Ошибка синка:', e.response?.data || e.message);
     process.exit(1);

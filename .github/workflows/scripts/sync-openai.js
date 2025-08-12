@@ -8,8 +8,8 @@ const REQUIRED = [
   'yeahdesk-docs_marketing.md',
 ];
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const ASSISTANT_ID   = process.env.OPENAI_ASSISTANT_ID;
+const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
+const ASSISTANT_ID    = process.env.OPENAI_ASSISTANT_ID;
 let   VECTOR_STORE_ID = process.env.OPENAI_VECTOR_STORE_ID || '';
 
 if (!OPENAI_API_KEY || !ASSISTANT_ID) {
@@ -74,8 +74,20 @@ async function uploadFile(filepath) {
   return data.id;
 }
 
+// === ИСПРАВЛЕНО: корректное добавление файлов в Vector Store ===
 async function addFilesToVectorStore(vectorStoreId, fileIds) {
-  await api.post(`/vector_stores/${vectorStoreId}/files`, { file_ids: fileIds });
+  if (!fileIds.length) return;
+  if (fileIds.length === 1) {
+    // одиночный файл -> /files с file_id
+    await api.post(`/vector_stores/${vectorStoreId}/files`, { file_id: fileIds[0] });
+  } else {
+    // пакет -> /file_batches с file_ids
+    const { data } = await api.post(
+      `/vector_stores/${vectorStoreId}/file_batches`,
+      { file_ids: fileIds }
+    );
+    console.log(`Создан batch на индексацию: ${data.id || 'unknown'}`);
+  }
 }
 
 (async () => {
@@ -86,6 +98,7 @@ async function addFilesToVectorStore(vectorStoreId, fileIds) {
       console.log(`Создан и привязан Vector Store: ${VECTOR_STORE_ID}`);
     }
 
+    // удалить старые версии по имени
     const vsFiles = await listVectorStoreFiles(VECTOR_STORE_ID);
     const targetNames = new Set(REQUIRED);
 
@@ -105,6 +118,7 @@ async function addFilesToVectorStore(vectorStoreId, fileIds) {
       console.log(`Удалена старая версия: ${id}`);
     }
 
+    // полная перезаливка 3 файлов
     const uploadedIds = [];
     for (const fp of REQUIRED) {
       const id = await uploadFile(fp);

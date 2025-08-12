@@ -22,7 +22,7 @@ jobs:
           node-version: '20'
 
       - name: Install deps
-        run: npm i -g axios form-data
+        run: npm install axios form-data
 
       - name: Sync to OpenAI
         env:
